@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
   cppxml::kml_document::pointer document = std::make_shared<cppxml::kml_document>("gpx2kml output");
   cppxml::kml_folder::pointer folder = std::make_shared<cppxml::kml_folder>("Coordinates");
   cppxml::kml_placemark::pointer placemark = std::make_shared<cppxml::kml_placemark>();
-  cppxml::kml_linestring::pointer linestring = std::make_shared<cppxml::kml_linestring>(cppxml::absolute, false);
+  cppxml::kml_linestring::pointer linestring = std::make_shared<cppxml::kml_linestring>(cppxml::absolute, false, false, 9);
 
   folder->add_child(placemark);
   placemark->add_child(linestring);
