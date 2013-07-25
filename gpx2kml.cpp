@@ -32,6 +32,7 @@
 #include "kml_placemark.hpp"
 #include "kml_point.hpp"
 #include "kml_linestring.hpp"
+#include <math.h>
 #include <memory>
 #include "string_converts.hpp"
 #include "timezone_manager.hpp"
@@ -43,6 +44,15 @@
 // coordinate (But I want my coordinates in ECEF for later analysis)
 typedef std::pair<double, fr::coordinates::ecef_vel> coordinate_pair;
 typedef std::vector<coordinate_pair> coordinate_vector;
+
+double distance(fr::coordinates::ecef_vel point1, fr::coordinates::ecef_vel point2)
+{
+  double dx = pow((point2.get_x() - point1.get_x()), 2.0);
+  double dy = pow((point2.get_y() - point1.get_y()), 2.0);
+  double dz = pow((point2.get_z() - point1.get_z()), 2.0);
+  double retval = sqrt(dx + dy + dz);
+  return retval;
+}
 
 // Populate_coordinates is the listener for the gpx factory
 void populate_coordinates(coordinate_vector *coordinates, double at_time, fr::coordinates::lat_long point, fr::coordinates::ecef_vel *last_point, double *last_time)
@@ -59,6 +69,9 @@ void populate_coordinates(coordinate_vector *coordinates, double at_time, fr::co
   }
   fr::coordinates::ecef_vel vel(point_ecef.get_x(), point_ecef.get_y(), point_ecef.get_z(), dx, dy, dz);
   coordinates->push_back(std::make_pair(at_time, vel));
+
+  *last_time = at_time;
+  *last_point = vel;
 }
 
 // Print KML document to selected stream
@@ -178,9 +191,48 @@ int main(int argc, char *argv[])
   folder->add_child(placemark);
   placemark->add_child(linestring);
   document->add_child(folder);
+  last_time = 0.0;
+  last_point = fr::coordinates::ecef_vel(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+  bool canopy_deployed = false;
 
   for (const coordinate_pair &pair : coordinates) {
+    if (last_time == 0.0) {
+      std::string placemark_desc("Time at ");
+      timeval tv;
+      tv.tv_usec = 0.0;
+      tv.tv_sec = pair.first;
+      placemark_desc.append(fr::time::to_string<timeval>()(tv));
+      fr::coordinates::lat_long cvt = fr::coordinates::converter<fr::coordinates::lat_long>()(pair.second);
+      placemark_desc.append(" altitude : ");
+      placemark_desc.append(fr::time::to_string<double>()(cvt.get_alt()));
+      placemark_desc.append(" meters");
+      // Place placemark for first point
+      cppxml::kml_placemark::pointer first_point_placemark = std::make_shared<cppxml::kml_placemark>("Start of Data", placemark_desc);
+      cppxml::kml_point::pointer first_point = std::make_shared<cppxml::kml_point>("", false, cppxml::absolute);
+      first_point->set_point(cvt);
+      first_point_placemark->add_child(first_point);
+      folder->add_child(first_point_placemark);
+    }
     add_coordinate(linestring, pair, last_time, last_point, min_altitude, max_altitude, interpolate_step);
+
+    if (!canopy_deployed && distance(last_point, pair.second) < 10.0) {
+      canopy_deployed = true;
+      timeval tv;
+      tv.tv_usec = 0;
+      tv.tv_sec = pair.first;      
+      std::string desc(fr::time::to_string<timeval>()(tv));
+      desc.append(" altitude: ");
+      fr::coordinates::lat_long llpoint = fr::coordinates::converter<fr::coordinates::lat_long>()(pair.second);
+      desc.append(fr::time::to_string<double>()(llpoint.get_alt()));
+      desc.append(" meters");
+      // I think this is when this happens
+      cppxml::kml_placemark::pointer canopy_placemark = std::make_shared<cppxml::kml_placemark>("Canopy Deployed", desc);
+      cppxml::kml_point::pointer canopy_point = std::make_shared<cppxml::kml_point>("", false, cppxml::absolute);
+      canopy_point->set_point(llpoint);
+      canopy_placemark->add_child(canopy_point);
+      folder->add_child(canopy_placemark);
+    }
+      
     last_time = pair.first;
     last_point = pair.second;
   }
