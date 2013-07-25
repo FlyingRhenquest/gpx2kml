@@ -32,6 +32,7 @@
 #include "kml_placemark.hpp"
 #include "kml_point.hpp"
 #include "kml_linestring.hpp"
+#include "kml_timespan.hpp"
 #include <math.h>
 #include <memory>
 #include "string_converts.hpp"
@@ -44,6 +45,28 @@
 // coordinate (But I want my coordinates in ECEF for later analysis)
 typedef std::pair<double, fr::coordinates::ecef_vel> coordinate_pair;
 typedef std::vector<coordinate_pair> coordinate_vector;
+
+void add_jump_point(const coordinate_pair &pair, cppxml::kml_folder::pointer folder)
+{
+  fr::coordinates::lat_long ll = fr::coordinates::converter<fr::coordinates::lat_long>()(pair.second);
+  std::string label("Time: ");
+  timeval start;
+  start.tv_usec = 0;
+  start.tv_sec = pair.first;
+  label.append(fr::time::to_string<timeval>()(start));
+  label.append(" altitude: ");
+  label.append(fr::time::to_string<double>()(ll.get_alt()));
+  label.append(" meters (MSL)");
+  cppxml::kml_placemark::pointer retval = std::make_shared<cppxml::kml_placemark>(label);
+  cppxml::kml_timespan::pointer retval_span = std::make_shared<cppxml::kml_timespan>();
+  retval_span->start(start.tv_sec);
+  retval_span->end(start.tv_sec + .9);
+  retval->add_child(retval_span);
+  cppxml::kml_point::pointer retval_point = std::make_shared<cppxml::kml_point>("", false, cppxml::absolute);
+  retval_point->set_point(ll);
+  retval->add_child(retval_point);
+  folder->add_child(retval);
+}
 
 double distance(fr::coordinates::ecef_vel point1, fr::coordinates::ecef_vel point2)
 {
@@ -185,12 +208,15 @@ int main(int argc, char *argv[])
 
   cppxml::kml_document::pointer document = std::make_shared<cppxml::kml_document>("gpx2kml output");
   cppxml::kml_folder::pointer folder = std::make_shared<cppxml::kml_folder>("Coordinates");
+  // Make a folder for timestampped jump points
+  cppxml::kml_folder::pointer point_folder = std::make_shared<cppxml::kml_folder>("Jump points", "Timestampped points along the jump");
   cppxml::kml_placemark::pointer placemark = std::make_shared<cppxml::kml_placemark>();
   cppxml::kml_linestring::pointer linestring = std::make_shared<cppxml::kml_linestring>(cppxml::absolute, false, false, 9);
 
   folder->add_child(placemark);
   placemark->add_child(linestring);
   document->add_child(folder);
+  document->add_child(point_folder);
   last_time = 0.0;
   last_point = fr::coordinates::ecef_vel(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   bool canopy_deployed = false;
@@ -213,6 +239,8 @@ int main(int argc, char *argv[])
       first_point_placemark->add_child(first_point);
       folder->add_child(first_point_placemark);
     }
+
+    add_jump_point(pair, point_folder);
     add_coordinate(linestring, pair, last_time, last_point, min_altitude, max_altitude, interpolate_step);
 
     if (!canopy_deployed && distance(last_point, pair.second) < 10.0) {
