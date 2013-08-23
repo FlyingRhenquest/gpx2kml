@@ -24,6 +24,7 @@
 #include <boost/bind.hpp>
 #include <boost/program_options.hpp>
 #include "coordinates.hpp"
+#include "flysight_factory.hpp"
 #include <fstream>
 #include "gpx_factory.hpp"
 #include <iostream>
@@ -195,12 +196,22 @@ int main(int argc, char *argv[])
   }
 
   coordinate_vector coordinates;
-  fr::data::gpx_factory factory(input_filename);
   fr::coordinates::ecef_vel last_point(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   double last_time = 0.0;
 
-  factory.available.connect(boost::bind(&populate_coordinates, &coordinates, _1, _2, &last_point, &last_time));
-  factory.process();
+  if ((input_filename.find(".csv") != std::string::npos) || 
+      (input_filename.find(".CSV") != std::string::npos)) {
+    // Assume it's a flysight file (Since that's the only other type
+    // I support right now)
+    fr::data::flysight_factory factory(input_filename);
+    factory.available.connect(boost::bind(&populate_coordinates, &coordinates, _1, _2, &last_point, &last_time));
+    factory.process();
+  } else {
+    // assume it's GPX
+    fr::data::gpx_factory factory(input_filename);
+    factory.available.connect(boost::bind(&populate_coordinates, &coordinates, _1, _2, &last_point, &last_time));
+    factory.process();
+  }
   // We should now have a vector of coordinates all ready to grind up into
   // a yummy coordinate sausage!
 
