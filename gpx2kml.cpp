@@ -219,15 +219,15 @@ int main(int argc, char *argv[])
 
   cppxml::kml_document::pointer document = std::make_shared<cppxml::kml_document>("gpx2kml output");
   cppxml::kml_folder::pointer folder = std::make_shared<cppxml::kml_folder>("Coordinates");
-  // Make a folder for timestampped jump points
-  cppxml::kml_folder::pointer point_folder = std::make_shared<cppxml::kml_folder>("Jump points", "Timestampped points along the jump");
+  // Make a folder for timestampped jump points (Provide points but don't show them)
+
   cppxml::kml_placemark::pointer placemark = std::make_shared<cppxml::kml_placemark>();
   cppxml::kml_linestring::pointer linestring = std::make_shared<cppxml::kml_linestring>(cppxml::absolute, false, false, 9);
 
   folder->add_child(placemark);
   placemark->add_child(linestring);
   document->add_child(folder);
-  document->add_child(point_folder);
+
   last_time = 0.0;
   last_point = fr::coordinates::ecef_vel(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   bool canopy_deployed = false;
@@ -251,25 +251,34 @@ int main(int argc, char *argv[])
       folder->add_child(first_point_placemark);
     }
 
-    add_jump_point(pair, point_folder);
+
     add_coordinate(linestring, pair, last_time, last_point, min_altitude, max_altitude, interpolate_step);
 
-    if (!canopy_deployed && distance(last_point, pair.second) < 10.0) {
-      canopy_deployed = true;
-      timeval tv;
-      tv.tv_usec = 0;
-      tv.tv_sec = pair.first;      
-      std::string desc(fr::time::to_string<timeval>()(tv));
-      desc.append(" altitude: ");
-      fr::coordinates::lat_long llpoint = fr::coordinates::converter<fr::coordinates::lat_long>()(pair.second);
-      desc.append(fr::time::to_string<double>()(llpoint.get_alt()));
-      desc.append(" meters");
-      // I think this is when this happens
-      cppxml::kml_placemark::pointer canopy_placemark = std::make_shared<cppxml::kml_placemark>("Canopy Deployed", desc);
-      cppxml::kml_point::pointer canopy_point = std::make_shared<cppxml::kml_point>("", false, cppxml::absolute);
-      canopy_point->set_point(llpoint);
-      canopy_placemark->add_child(canopy_point);
-      folder->add_child(canopy_placemark);
+    // Compute time step
+    if (last_time != 0.0) {
+      double time_step = pair.first - last_time;
+      // I'm using 10 meters per second linear distance as my benchmark for canopy deployment.
+      // Make sure the number of meters reflects the number of seconds between points polled.
+      double time_step_meters = 10.0 * time_step;
+      
+      if (!canopy_deployed && distance(last_point, pair.second) < time_step_meters) {
+	canopy_deployed = true;
+	timeval tv;
+	tv.tv_usec = 0;
+	tv.tv_sec = pair.first;      
+	std::string desc(fr::time::to_string<timeval>()(tv));
+	std::cerr << "Canopy deployment detected at " << desc << " time_step_meters is " << time_step_meters << std::endl;
+	desc.append(" altitude: ");
+	fr::coordinates::lat_long llpoint = fr::coordinates::converter<fr::coordinates::lat_long>()(pair.second);
+	desc.append(fr::time::to_string<double>()(llpoint.get_alt()));
+	desc.append(" meters");
+	// I think this is when this happens
+	cppxml::kml_placemark::pointer canopy_placemark = std::make_shared<cppxml::kml_placemark>("Canopy Deployed", desc);
+	cppxml::kml_point::pointer canopy_point = std::make_shared<cppxml::kml_point>("", false, cppxml::absolute);
+	canopy_point->set_point(llpoint);
+	canopy_placemark->add_child(canopy_point);
+	folder->add_child(canopy_placemark);
+      }
     }
       
     last_time = pair.first;
